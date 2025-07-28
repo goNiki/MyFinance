@@ -6,34 +6,30 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"os"
 )
 
 func main() {
-
 	var migrationPath string
-
 	flag.StringVar(&migrationPath, "migration_path", "", "path to migrations")
 	flag.Parse()
 	if migrationPath == "" {
 		panic("migrationPath is required")
 	}
 
-	sqlByted, err := ioutil.ReadFile(migrationPath)
+	sqlBytes, err := os.ReadFile(migrationPath)
 	if err != nil {
 		panic(err)
 	}
 
 	cfg := config.MustLoad()
-
-	storage, err := storage.New(&cfg.DBConfig)
-	db := storage.DB
-
+	storageInstance, err := storage.New(&cfg.DBConfig)
 	if err != nil {
 		panic(err)
 	}
+	db := storageInstance.DB
 
-	_, err = db.Exec(context.Background(), string(sqlByted))
+	_, err = db.Exec(context.Background(), string(sqlBytes))
 	if err != nil {
 		panic(err)
 	}

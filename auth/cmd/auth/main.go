@@ -2,6 +2,7 @@ package main
 
 import (
 	"auth/internal/config"
+	"auth/internal/handlers/login"
 	"auth/internal/handlers/register"
 	mwLogger "auth/internal/middlware/logger"
 	"auth/internal/storage"
@@ -37,6 +38,7 @@ func main() {
 	router.Use(middleware.RequestID)
 	router.Use(mwLogger.New(log))
 	router.Post("/user", register.New(log, storage))
+	router.Post("/login", login.New(log, storage))
 
 	srv := &http.Server{
 		Addr:         cfg.Address,
@@ -47,6 +49,6 @@ func main() {
 	}
 	//TODO init Server
 	if err := srv.ListenAndServe(); err != nil {
-		log.Error("failed to start server")
+		log.Error("failed to start server", sl.Err(err))
 	}
 }

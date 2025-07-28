@@ -3,6 +3,7 @@ package storage
 import (
 	"auth/internal/config"
 	"auth/internal/handlers/register"
+	"auth/internal/models/users"
 	"context"
 	"fmt"
 	"time"
@@ -10,8 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type UserStorage interface {
+	RegisterUser(ctx context.Context, email string, username string, PassHash []byte, createat time.Time) (*register.Response, error)
+	GetUserByEmail(ctx context.Context, email string) (*users.Users, error)
+	IsUserExistsByEmail(email string) error
+	IsUserExistByUserName(username string) error
+	IsUserNotExistsByEmail(email string) error
+}
+
 type Storage struct {
-	db *pgxpool.Pool
+	DB *pgxpool.Pool
 }
 
 func New(cfg *config.DBConfig) (*Storage, error) {
@@ -26,7 +35,7 @@ func New(cfg *config.DBConfig) (*Storage, error) {
 		return nil, fmt.Errorf("unable to ping to database %w ", err)
 	}
 
-	return &Storage{db: db}, nil
+	return &Storage{DB: db}, nil
 }
 
 // RegisterUser registers a new user in the database.
@@ -37,7 +46,7 @@ func (s *Storage) RegisterUser(ctx context.Context, email string, username strin
 
 	var userID int64
 
-	err := s.db.QueryRow(ctx, query, email, username, PassHash, createat).Scan(&userID)
+	err := s.DB.QueryRow(ctx, query, email, username, PassHash, createat).Scan(&userID)
 	if err != nil {
 		//TODO сделать обработчик ошибки нет пользователя
 		return &register.Response{}, fmt.Errorf("%s : %w", op, err)
@@ -45,4 +54,20 @@ func (s *Storage) RegisterUser(ctx context.Context, email string, username strin
 
 	return &register.Response{ID: userID, Email: email, Username: username}, nil
 
+}
+
+func (s *Storage) GetUserByEmail(ctx context.Context, email string) (*users.Users, error) {
+
+	const op = "storage.getuserbyemail"
+
+	query := `SELECT id, email, password FROM users WHERE email = $1`
+
+	var user users.Users
+
+	err := s.DB.QueryRow(ctx, query, email).Scan(&user.ID, &user.Email, &user.Password)
+	if err != nil {
+		return &users.Users{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return &users.Users{ID: user.ID, Email: user.Email, Password: user.Password}, nil
 }

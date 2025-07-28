@@ -1,10 +1,10 @@
 package register
 
 import (
+	"auth/internal/models/errorsi"
 	resp "auth/internal/utils/api/response"
 	"auth/internal/utils/logger/sl"
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -28,11 +28,21 @@ type Response struct {
 	Username string `json:"username"`
 }
 
-type Register interface {
-	RegisterUser(ctx context.Context, email string, username string, PassHash []byte, createat time.Time) (*Response, error)
+// UserStorage defines the interface for user registration storage.
+type UserStorage interface {
+	RegisterUser(ctx context.Context, email, username string, passHash []byte, createAt time.Time) (*Response, error)
+	IsUserExistsByEmail(email string) error
+	IsUserExistByUserName(username string) error
 }
 
-func New(log *slog.Logger, register Register) http.HandlerFunc {
+// User represents the user model returned by RegisterUser.
+type User struct {
+	ID       int64
+	Email    string
+	Username string
+}
+
+func New(log *slog.Logger, register UserStorage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.register.New"
 
@@ -53,10 +63,19 @@ func New(log *slog.Logger, register Register) http.HandlerFunc {
 
 		if err := validator.New().Struct(req); err != nil {
 			validateErr := err.(validator.ValidationErrors)
-			log.Error("invalid request", sl.Err(err))
-			//TODO доделать обработчик ошибок после валидации.
-			fmt.Println(validateErr)
-			http.Error(w, "validator err", http.StatusBadRequest)
+			log.Error("invalid request", sl.Err(validateErr))
+			http.Error(w, "invalid input", http.StatusBadRequest)
+			return
+		}
+		if err := register.IsUserExistsByEmail(req.Email); err != nil {
+			msg, status := validateEmailorUsername(err, *log)
+			http.Error(w, msg, status)
+			return
+		}
+
+		if err := register.IsUserExistByUserName(req.Username); err != nil {
+			msg, status := validateEmailorUsername(err, *log)
+			http.Error(w, msg, status)
 			return
 		}
 
@@ -70,13 +89,12 @@ func New(log *slog.Logger, register Register) http.HandlerFunc {
 		createAt := time.Now()
 		res, err := register.RegisterUser(r.Context(), req.Email, req.Username, passHash, createAt)
 		if err != nil {
-			//TODO переделать блок обработки ошибок
-			log.Error("error save BD")
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			out, status := validateEmailorUsername(err, *log)
+			http.Error(w, out, status)
 			return
 		}
 
-		log.Info("user register", slog.Int64("ID", int64(res.ID)), slog.String("email", res.Email))
+		log.Info("user register", slog.Int64("ID", res.ID), slog.String("email", res.Email))
 
 		render.JSON(w, r, Response{
 			Responce: resp.Ok(),
@@ -84,6 +102,20 @@ func New(log *slog.Logger, register Register) http.HandlerFunc {
 			Email:    res.Email,
 			Username: res.Username,
 		})
+	}
+}
+
+func validateEmailorUsername(err error, log slog.Logger) (string, int) {
+	switch err {
+	case errorsi.ErrEmailExists:
+		log.Error("Email is Exists")
+		return "Email is Exists", http.StatusConflict
+	case errorsi.ErrUsernameExists:
+		log.Error("Username is Exists")
+		return "Username is Exists", http.StatusConflict
+	default:
+		log.Error("DB error", sl.Err(err))
+		return "Internal Error", http.StatusInternalServerError
 	}
 
 }
